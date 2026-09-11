@@ -43,7 +43,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(uname -m)" = '${{ matrix.arch }}'
-          brew install python@3.12 python-tk@3.12 ffmpeg exiftool
+          brew install --overwrite python@3.12 python-tk@3.12 ffmpeg exiftool
           PYTHON="$(brew --prefix python@3.12)/bin/python3.12"
           "$PYTHON" -m venv .build-venv
           .build-venv/bin/python -m pip install -r packaging/requirements-macos.txt
