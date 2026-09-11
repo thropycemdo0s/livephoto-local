@@ -1,0 +1,65 @@
+name: Build macOS
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, codex/mac-portable]
+    paths: ['livephoto/**', 'packaging/**', 'tests/**', 'app-source.zip', '.github/workflows/build-macos.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_ANALYTICS: '1'
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Expand source bundle when uploaded through GitHub web
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f app-source.zip ]; then
+            /usr/bin/ditto -x -k app-source.zip .
+          fi
+      - name: Prepare native Python, Tk and FFmpeg
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = '${{ matrix.arch }}'
+          brew install python@3.12 python-tk@3.12 ffmpeg exiftool
+          PYTHON="$(brew --prefix python@3.12)/bin/python3.12"
+          "$PYTHON" -m venv .build-venv
+          .build-venv/bin/python -m pip install -r packaging/requirements-macos.txt
+          echo "FFMPEG=$(brew --prefix ffmpeg)/bin/ffmpeg" >> "$GITHUB_ENV"
+          echo "FFPROBE=$(brew --prefix ffmpeg)/bin/ffprobe" >> "$GITHUB_ENV"
+      - name: Test conversion, EXIF and desktop behavior
+        run: .build-venv/bin/python -m unittest discover -s tests -v
+      - name: Build, sign locally, relocate and test the app
+        run: .build-venv/bin/python packaging/build_macos.py
+      - name: Upload verified portable ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: LivePhoto-macOS-${{ matrix.arch }}
+          path: |
+            release/LivePhoto-macOS-${{ matrix.arch }}-0.3.0.zip
+            release/LivePhoto-macOS-${{ matrix.arch }}-0.3.0.zip.sha256.txt
+            release/LivePhoto-macOS-${{ matrix.arch }}-0.3.0.verification.json
+          if-no-files-found: error
+          retention-days: 7
